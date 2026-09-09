@@ -8,6 +8,7 @@ destroy.
 ```bash
 python3 builders/from_qasc.py --qasc ../qasc_plus          # 472 targets, shipped
 python3 builders/from_quantum_allostery.py --src ../quantum-allostery   # 15, shipped
+python3 builders/apo_holo_paired.py --src ../quantum-allostery          # 15 pairs, shipped
 python3 builders/from_allobench.py --src ../allosteric-dataset-pipeline # 1,423, local only
 python3 spec/validate.py sets/*                            # 0 only if everything conforms
 python3 overlap/measure.py                                 # regenerate overlap/README.md
@@ -24,9 +25,19 @@ python3 overlap/measure.py                                 # regenerate overlap/
 | `negatives` | 89 | none-annotated | holo | yes |
 | `matched` | 101 | expert-curated + none-annotated | holo | yes |
 | **`apo_holo`** | **15** | **holo-derived-apo-paired** | **apo** | yes |
+| **`apo_holo_paired`** | **15 × 2** | **holo-derived-apo-paired** | **apo + holo** | yes |
 | `allobench` | 1,423 | 4A-heavy-atom-to-modulator | holo | **no — build it** |
 
-487 targets in the repository, 1,910 once the AlloBench builder has run.
+517 targets in the repository, 1,940 once the AlloBench builder has run.
+
+`apo_holo_paired` is `apo_holo` written twice, once from each member of the pair, with
+the **same node set, anchor and labels on both sides** — the intersection of the frozen
+apo node set with the residues the holo entry models. Only the coordinate file differs,
+so a paired test over it measures the conformational cost and nothing else. That control
+is what separates "apo is harder" from "these are different targets", and the answer it
+gives is that at n = 15 the cost is not measurable: ALPS scores apo 0.674 against holo
+0.708 at paired p = 0.90, with apo ahead on 9 of 15 arms and two arms swinging by more
+than 0.2.
 
 One `.npz` per target, one schema, every rule tag mandatory. The schema and what each
 rule means: [`spec/FORMAT.md`](spec/FORMAT.md). Nothing loads without saying which rule
@@ -76,12 +87,25 @@ runs one command. Full terms and citations: [`PROVENANCE.md`](PROVENANCE.md).
 
 ## What the integration actually changed
 
-**The AlloBench route is now Cβ.** Upstream ships `dataset/cb/` — Cβ coordinates, Cα
-substituted at glycine, keyed identically to the Cα samples. That directory did not
-exist when the pipeline was first vendored into `qasc_plus`, so every published number on
-that route was computed on Cα while every other set here is Cβ. One of the three stated
-incompatibilities between those two sets is now removable. The other two — label rule and
-holo-vs-holo — are not.
+**The AlloBench route is now Cβ, and it was worth measuring.** Upstream ships
+`dataset/cb/` — Cβ coordinates, Cα substituted at glycine, keyed identically to the Cα
+samples. That directory did not exist when the pipeline was first vendored into
+`qasc_plus`, so every published number on that route was computed on Cα while every
+other set here is Cβ, which is also what that repository's ALPS was tuned on.
+
+Rebuilding on it and rerunning: over 950 targets whose node sets and label vectors are
+**identical** between the two builds, Cβ is worth **+0.011 to ALPS and +0.039 to a
+residue-graph GNN** (paired p 2.5e-06 and 4.0e-13). The learned model gains 3.4× what
+the hand-designed one gains, which is what a model that passes messages along individual
+contacts should do when given a better statement of which residues touch. One of the
+three stated incompatibilities between those two sets is now removable; the label rule
+and holo-vs-holo are not.
+
+That rebuild also surfaced something neither source set could show alone: **whether the
+learned model beats the hand-designed one is a function of how many residues the active
+site has**, from −0.065 at a two-residue seed to +0.062 at five to nine. This
+repository's builder keeps targets with seeds that small and `qasc_plus`'s adapter drops
+them, which is why the two disagree about the same comparison.
 
 **Five files are quarantined rather than shipped.** They came out of the conversion with
 residue numbers that are not a usable key: insertion codes collapsed onto duplicate
